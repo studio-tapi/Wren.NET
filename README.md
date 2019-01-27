@@ -1,3 +1,10 @@
+## UniWren is a unity port of a dot net port of a small scripting language, based on https://github.com/robotii/Wren.NET
+
+- Added an `ObjPrimitive` class that wraps a C# `object` in a wren class.
+- Added `public delegate IEnumerator PrimitiveCoroutine(WrenVM vm, Obj[] args, int stackStart, WrenVM.SuccessRef succeeded);`
+  that works like `bool Primitive(...)` but is a unity coroutine.
+- Added `IEnumerator InterpretCoroutines` that runs the wren interpreter as a unity coroutine.
+
 ## Wren.NET is a small scripting language written in C#, based on https://github.com/munificent/wren
 
 The following example shows the syntax accepted 
