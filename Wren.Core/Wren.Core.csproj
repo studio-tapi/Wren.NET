@@ -43,6 +43,7 @@
     <Compile Include="Objects\ObjClosure.cs" />
     <Compile Include="Objects\ObjFiber.cs" />
     <Compile Include="Objects\ObjFn.cs" />
+    <Compile Include="Objects\ObjForeign.cs" />
     <Compile Include="Objects\ObjInstance.cs" />
     <Compile Include="Objects\ObjList.cs" />
     <Compile Include="Objects\ObjMap.cs" />

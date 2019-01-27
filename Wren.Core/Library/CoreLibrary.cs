@@ -14,6 +14,7 @@ namespace Wren.Core.Library
             "class Bool {}\n"
             + "class Fiber {}\n"
             + "class Fn {}\n"
+            + "class Foreign {}\n"
             + "class Null {}\n"
             + "class Num {}\n"
             + "\n"
@@ -579,6 +580,12 @@ namespace Wren.Core.Library
         static bool prim_fn_toString(WrenVM vm, Obj[] args, int stackStart)
         {
             args[stackStart] = Obj.MakeString("<fn>");
+            return true;
+        }
+
+        static bool prim_foreign_toString(WrenVM vm, Obj[] args, int stackStart)
+        {
+            args[stackStart] = Obj.MakeString((args[stackStart] as ObjForeign).foreign.ToString());
             return true;
         }
 
@@ -2172,6 +2179,9 @@ namespace Wren.Core.Library
             _vm.Call(WrenVM.FnClass, "call(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_)");
 
             _vm.Primitive(WrenVM.FnClass, "toString", prim_fn_toString);
+
+            WrenVM.ForeignClass = (ObjClass)_vm.FindVariable("Foreign");
+            _vm.Primitive(WrenVM.ForeignClass, "toString", prim_foreign_toString);
 
             WrenVM.NullClass = (ObjClass)_vm.FindVariable("Null");
             _vm.Primitive(WrenVM.NullClass, "!", prim_null_not);

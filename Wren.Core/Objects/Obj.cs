@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Wren.Core.VM;
 
 namespace Wren.Core.Objects
@@ -120,6 +120,46 @@ namespace Wren.Core.Objects
                     return Type.GetHashCode();
             }
         }
+
+		/// <summary>
+		/// Attempt to unbox wren primitive types as C# primitive types
+		/// </summary>
+		/// <returns></returns>
+		public object Unbox()
+		{
+			switch( this.Type )
+			{
+				case ObjType.Num:
+					return this.Num;
+				case ObjType.True:
+					return true;
+				case ObjType.False:
+					return true;
+				case ObjType.Null:
+				case ObjType.Undefined:
+					return null;
+			}
+
+			var upvalue = this as ObjUpvalue;
+			if( upvalue != null )
+			{
+				return upvalue.Container.Unbox();
+			}
+
+			var str = this as ObjString;
+			if( str != null )
+			{
+				return str.Str;
+			}
+
+			var foreign = this as ObjForeign;
+			if( foreign != null )
+			{
+				return foreign.foreign;
+			}
+
+			return this;
+		}
     }
 
     public enum ObjType

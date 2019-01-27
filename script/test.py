@@ -11,7 +11,7 @@ import sys
 
 # Runs the tests.
 WREN_DIR = dirname(dirname(realpath(__file__)))
-WREN_APP = join(WREN_DIR, 'wren','bin','Release', 'wren')
+WREN_APP = join(WREN_DIR, 'Wren','bin','Debug', 'Wren.exe')
 
 EXPECT_PATTERN = re.compile(r'// expect: ?(.*)')
 EXPECT_ERROR_PATTERN = re.compile(r'// expect error(?! line)')

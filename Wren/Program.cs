@@ -1,5 +1,8 @@
-﻿using System;
+using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.IO;
+using UniWren;
 using Wren.Core.Library;
 using Wren.Core.VM;
 
@@ -43,28 +46,54 @@ namespace Wren
             return s.Replace("}", "").Length - s.Replace("{", "").Length;
         }
 
-        static void RunRepl()
-        {
-            WrenVM vm = new WrenVM();
-            LibraryLoader.LoadLibraries(vm);
+		static void RunRepl()
+		{
+			WrenVM vm = new WrenVM();
+			LibraryLoader.LoadLibraries( vm );
 
-            Console.WriteLine("-- wren v0.0.0");
+			WrenScript.LoadLibrary<ScriptTest>( vm );
 
-            string line = "";
+			Console.WriteLine( "-- wren v0.0.0" );
 
-            for (; ; )
-            {
-                Console.Write("> ");
-                line += Console.ReadLine() + "\n";
+			string line = "";
 
-                if(OpenBrackets(line) > 0)
-                    continue;
+			for(; ; )
+			{
+				Console.Write( "> " );
+				line += Console.ReadLine() + "\n";
 
-                // TODO: Handle failure.
-                vm.Interpret("Prompt","Prompt", line);
-                line = "";
-            }
-        }
+				if( OpenBrackets( line ) > 0 )
+					continue;
+
+				// TODO: Handle failure.
+				var result = new WrenVM.ResultRef();
+				var coroutine = vm.InterpretCoroutines( "Prompt", "Prompt", line, result );
+
+				// quick and dirty sim of unity's coroutines
+				Stack<IEnumerator> stack = new Stack<IEnumerator>();
+				stack.Push( coroutine );
+				while( stack.Count > 0 )
+				{
+					if( !stack.Peek().MoveNext() )
+					{
+						stack.Pop();
+					}
+					else
+					{
+						if( stack.Peek().Current is IEnumerator )
+						{
+							stack.Push( stack.Peek().Current as IEnumerator );
+						}
+						else
+						{
+							Console.WriteLine( "yielded " + stack.Peek().Current );
+						}
+					}
+				}
+
+				line = "";
+			}
+		}
 
         static string LoadModule(string name)
         {

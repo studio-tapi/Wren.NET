@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using Wren.Core.Bytecode;
 using Wren.Core.Library;
@@ -9,19 +10,21 @@ namespace Wren.Core.VM
     public delegate string WrenLoadModuleFn(string name);
 
     public delegate bool Primitive(WrenVM vm, Obj[] args, int stackStart);
+    public delegate IEnumerator PrimitiveCoroutine(WrenVM vm, Obj[] args, int stackStart, WrenVM.SuccessRef succeeded);
 
     public enum MethodType
     {
         // A primitive method implemented in the VM.
         // this can directly manipulate the fiber's stack.
         Primitive,
+		PrimitiveCoroutine,
 
         // A normal user-defined method.
         Block,
 
         // Special Call Method
-        Call
-    };
+        Call,
+	};
 
     public class Method
     {
@@ -30,6 +33,7 @@ namespace Wren.Core.VM
         // The method function itself. The [type] determines which field of the union
         // is used.
         public Primitive Primitive;
+        public PrimitiveCoroutine PrimitiveCoroutine;
 
         // May be a [ObjFn] or [ObjClosure].
         public Obj Obj;
@@ -44,7 +48,17 @@ namespace Wren.Core.VM
 
     public class WrenVM
     {
-        public static ObjClass BoolClass;
+		public class SuccessRef
+		{
+			public bool value = true;
+		}
+
+		public class ResultRef
+		{
+			public InterpretResult value = InterpretResult.Success;
+		}
+
+		public static ObjClass BoolClass;
         public static ObjClass ClassClass;
         public static ObjClass FiberClass;
         public static ObjClass FnClass;
@@ -55,6 +69,7 @@ namespace Wren.Core.VM
         public static ObjClass ObjectClass;
         public static ObjClass RangeClass;
         public static ObjClass StringClass;
+        public static ObjClass ForeignClass;
 
         // The fiber that is currently running.
         public ObjFiber Fiber;
@@ -243,13 +258,13 @@ namespace Wren.Core.VM
             return Obj.MakeString(string.Format("Class '{0}' cannot inherit from a non-class object.", name));
         }
 
-        // The main bytecode interpreter loop. This is where the magic happens. It is
-        // also, as you can imagine, highly performance critical. Returns `true` if the
-        // fiber completed without error.
-        private bool RunInterpreter()
-        {
-            /* Load Frame */
-            CallFrame frame = Fiber.Frames[Fiber.NumFrames - 1];
+		// The main bytecode interpreter loop. This is where the magic happens. It is
+		// also, as you can imagine, highly performance critical. Returns `true` if the
+		// fiber completed without error.
+		private IEnumerator RunInterpreter(SuccessRef succeeded)
+		{
+			/* Load Frame */
+			CallFrame frame = Fiber.Frames[Fiber.NumFrames - 1];
             int ip = frame.Ip;
             int stackStart = frame.StackStart;
             Obj[] stack = Fiber.Stack;
@@ -410,7 +425,7 @@ namespace Wren.Core.VM
                                 frame.Ip = ip;
                                 MethodNotFound(this, classObj, symbol);
                                 if (!HandleRuntimeError())
-                                    return false;
+                                    { succeeded.value = false; yield break; }
                                 frame = Fiber.Frames[Fiber.NumFrames - 1];
                                 ip = frame.Ip;
                                 stackStart = frame.StackStart;
@@ -434,16 +449,59 @@ namespace Wren.Core.VM
                                     if (Fiber.Error != null && Fiber.Error != Obj.Null)
                                     {
                                         if (!HandleRuntimeError())
-                                            return false;
+                                            { succeeded.value = false; yield break; }
                                     }
                                     else
                                     {
                                         // If we don't have a fiber to switch to, stop interpreting.
                                         if (stack[argStart] == Obj.Null)
-                                            return true;
+                                            { succeeded.value = true; yield break; }
                                         Fiber = stack[argStart] as ObjFiber;
                                         if (Fiber == null)
-                                            return false;
+                                            { succeeded.value = false; yield break; }
+                                    }
+
+                                    /* Load Frame */
+                                    frame = Fiber.Frames[Fiber.NumFrames - 1];
+                                    ip = frame.Ip;
+                                    stackStart = frame.StackStart;
+                                    stack = Fiber.Stack;
+                                    fn = (frame.Fn as ObjFn) ?? (frame.Fn as ObjClosure).Function;
+                                    bytecode = fn.Bytecode;
+                                }
+                                break;
+                            }
+
+                            if (method.MType == MethodType.PrimitiveCoroutine)
+                            {
+								var coroutine = method.PrimitiveCoroutine( this, stack, argStart, succeeded );
+								while( coroutine.MoveNext() )
+								{
+									yield return coroutine.Current;
+								}
+
+								// After calling this, the result will be in the first arg slot.
+								if( succeeded.value )
+                                {
+                                    Fiber.StackTop = argStart + 1;
+                                }
+                                else
+                                {
+                                    frame.Ip = ip;
+
+                                    if (Fiber.Error != null && Fiber.Error != Obj.Null)
+                                    {
+                                        if (!HandleRuntimeError())
+                                            { succeeded.value = false; yield break; }
+                                    }
+                                    else
+                                    {
+                                        // If we don't have a fiber to switch to, stop interpreting.
+                                        if (stack[argStart] == Obj.Null)
+                                            { succeeded.value = true; yield break; }
+                                        Fiber = stack[argStart] as ObjFiber;
+                                        if (Fiber == null)
+                                            { succeeded.value = false; yield break; }
                                     }
 
                                     /* Load Frame */
@@ -466,7 +524,7 @@ namespace Wren.Core.VM
                             else if (!CheckArity(stack, numArgs, argStart))
                             {
                                 if (!HandleRuntimeError())
-                                    return false;
+                                    { succeeded.value = false; yield break; }
 
                                 frame = Fiber.Frames[Fiber.NumFrames - 1];
                                 ip = frame.Ip;
@@ -625,7 +683,7 @@ namespace Wren.Core.VM
                             {
                                 // If this is the main fiber, we're done.
                                 if (Fiber.Caller == null)
-                                    return true;
+                                    { succeeded.value = true; yield break; }
 
                                 // We have a calling fiber to resume.
                                 Fiber = Fiber.Caller;
@@ -695,7 +753,7 @@ namespace Wren.Core.VM
                                 Fiber.Error = error;
                                 frame.Ip = ip;
                                 if (!HandleRuntimeError())
-                                    return false;
+                                    { succeeded.value = false; yield break; }
                                 /* Load Frame */
                                 frame = Fiber.Frames[Fiber.NumFrames - 1];
                                 ip = frame.Ip;
@@ -725,7 +783,7 @@ namespace Wren.Core.VM
                             frame.Ip = ip;
                             Fiber.Error = Obj.MakeString(string.Format("Class '{0}' may not have more than 255 fields, including inherited ones.", name));
                             if (!HandleRuntimeError())
-                                return false;
+                                { succeeded.value = false; yield break; }
                             /* Load Frame */
                             frame = Fiber.Frames[Fiber.NumFrames - 1];
                             ip = frame.Ip;
@@ -749,7 +807,7 @@ namespace Wren.Core.VM
                                 frame.Ip = ip;
                                 Fiber.Error = Obj.MakeString("Error while binding method");
                                 if (!HandleRuntimeError())
-                                    return false;
+                                    { succeeded.value = false; yield break; }
                                 /* Load Frame */
                                 frame = Fiber.Frames[Fiber.NumFrames - 1];
                                 ip = frame.Ip;
@@ -775,7 +833,7 @@ namespace Wren.Core.VM
                                 frame.Ip = ip;
                                 Fiber.Error = result;
                                 if (!HandleRuntimeError())
-                                    return false;
+                                    { succeeded.value = false; yield break; }
                                 /* Load Frame */
                                 frame = Fiber.Frames[Fiber.NumFrames - 1];
                                 ip = frame.Ip;
@@ -831,7 +889,7 @@ namespace Wren.Core.VM
                                 frame.Ip = ip;
                                 Fiber.Error = result;
                                 if (!HandleRuntimeError())
-                                    return false;
+                                    { succeeded.value = false; yield break; }
                                 /* Load Frame */
                                 frame = Fiber.Frames[Fiber.NumFrames - 1];
                                 ip = frame.Ip;
@@ -851,7 +909,7 @@ namespace Wren.Core.VM
                             {
                                 Fiber.Error = Obj.MakeString("'this' should be a class.");
                                 if (!HandleRuntimeError())
-                                    return false;
+                                    { succeeded.value = false; yield break; }
                                 /* Load Frame */
                                 frame = Fiber.Frames[Fiber.NumFrames - 1];
                                 ip = frame.Ip;
@@ -876,7 +934,7 @@ namespace Wren.Core.VM
                     case Instruction.END:
                         // A CODE_END should always be preceded by a CODE_RETURN. If we get here,
                         // the compiler generated wrong code.
-                        return false;
+                        { succeeded.value = false; yield break; }
                 }
             }
 
@@ -885,21 +943,49 @@ namespace Wren.Core.VM
         }
 
         // Execute [source] in the context of the core module.
-        private InterpretResult LoadIntoCore(string source)
+        private IEnumerator LoadIntoCore(string source, ResultRef resultRef)
         {
             ObjModule coreModule = GetCoreModule();
 
             ObjFn fn = Compiler.Compile(this, coreModule, "", source, true);
-            if (fn == null) return InterpretResult.CompileError;
+			if( fn == null )
+			{
+				resultRef.value = InterpretResult.CompileError;
+				yield break;
+			}
 
             Fiber = new ObjFiber(fn);
 
-            return RunInterpreter() ? InterpretResult.Success : InterpretResult.RuntimeError;
+			var succeeded = new SuccessRef();
+			var interpreter = RunInterpreter(succeeded);
+			while (interpreter.MoveNext())
+			{
+				yield return interpreter.Current;
+			}
+
+			resultRef.value = succeeded.value ? InterpretResult.Success : InterpretResult.RuntimeError;
         }
 
-        public InterpretResult Interpret(string moduleName, string sourcePath, string source)
+		public InterpretResult Interpret(string moduleName, string sourcePath, string source)
+		{
+			var resultRef = new ResultRef();
+			var interpreter = InterpretCoroutines( moduleName, sourcePath, source, resultRef );
+			// var result = InterpretResult.Running;
+			while( interpreter.MoveNext() ) { }
+			return resultRef.value;
+		}
+
+        public IEnumerator InterpretCoroutines(string moduleName, string sourcePath, string source, ResultRef resultRef)
         {
-            if (sourcePath.Length == 0) return LoadIntoCore(source);
+			if( sourcePath.Length == 0 )
+			{
+				var loader = LoadIntoCore( source, resultRef );
+				while (loader.MoveNext())
+				{
+					yield return loader.Current;
+				}
+				yield break;
+			}
 
             // TODO: Better module name.
             Obj name = Obj.MakeString(moduleName);
@@ -907,14 +993,20 @@ namespace Wren.Core.VM
             ObjFiber f = LoadModule(name, source);
             if (f == null)
             {
-                return InterpretResult.CompileError;
+				resultRef.value = InterpretResult.CompileError;
+				yield break;
             }
 
             Fiber = f;
 
-            bool succeeded = RunInterpreter();
+			var succeeded = new SuccessRef();
+			var interpreter = RunInterpreter(succeeded);
+			while (interpreter.MoveNext())
+			{
+				yield return interpreter.Current;
+			}
 
-            return succeeded ? InterpretResult.Success : InterpretResult.RuntimeError;
+            resultRef.value = succeeded.value ? InterpretResult.Success : InterpretResult.RuntimeError;
         }
 
         public Obj FindVariable(string name)
@@ -1000,6 +1092,17 @@ namespace Wren.Core.VM
             int symbol = MethodNames.IndexOf(s);
 
             objClass.BindMethod(symbol, new Method { Primitive = func, MType = MethodType.Primitive });
+        }
+
+        public void Primitive(ObjClass objClass, string s, PrimitiveCoroutine func)
+        {
+            if (!MethodNames.Contains(s))
+            {
+                MethodNames.Add(s);
+            }
+            int symbol = MethodNames.IndexOf(s);
+
+            objClass.BindMethod(symbol, new Method { PrimitiveCoroutine = func, MType = MethodType.PrimitiveCoroutine });
         }
 
         public void Call(ObjClass objClass, string s)
