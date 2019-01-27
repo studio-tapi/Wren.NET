@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text;
 using Wren.Core.Objects;
 using Wren.Core.VM;
 
@@ -265,9 +266,7 @@ namespace Wren.Core.Bytecode
             parser.HasError = true;
             if (!parser.PrintErrors) return;
 
-            Console.Error.Write("[{0} line {1}] Error: ", parser.SourcePath, parser.CurrentLine);
-
-            Console.Error.WriteLine(format);
+            parser.vm.Error(string.Format("[{0} line {1}] Error: ", parser.SourcePath, parser.CurrentLine) + format);
         }
 
         private void Error(string format)
@@ -275,28 +274,30 @@ namespace Wren.Core.Bytecode
             _parser.HasError = true;
             if (!_parser.PrintErrors) return;
 
+			StringBuilder errorBuilder = new StringBuilder();
             Token token = _parser.Previous;
 
             // If the parse error was caused by an error token, the lexer has already
             // reported it.
             if (token.Type == TokenType.Error) return;
 
-            Console.Error.Write("[{0} line {1}] Error at ", _parser.SourcePath, token.Line);
+            errorBuilder.Append(string.Format("[{0} line {1}] Error at ", _parser.SourcePath, token.Line));
 
             switch (token.Type)
             {
                 case TokenType.Line:
-                    Console.Error.Write("newline: ");
+                    errorBuilder.Append("newline: ");
                     break;
                 case TokenType.Eof:
-                    Console.Error.Write("end of file: ");
+                    errorBuilder.Append("end of file: ");
                     break;
                 default:
-                    Console.Error.Write("'{0}': ", _parser.Source.Substring(token.Start, token.Length));
+                    errorBuilder.Append(string.Format("'{0}': ", _parser.Source.Substring(token.Start, token.Length)));
                     break;
             }
 
-            Console.Error.WriteLine(format);
+			errorBuilder.Append(format);
+			_parser.vm.Error(errorBuilder.ToString());
         }
 
         // Adds [constant] to the constant pool and returns its index.

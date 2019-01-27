@@ -76,9 +76,12 @@ namespace Wren.Core.VM
 
         readonly ObjMap _modules;
 
-        public WrenVM()
-        {
-            MethodNames = new List<string>();
+		public WrenVM( Action<string> write, Action<string> error )
+		{
+			Write = write ?? (_ => Console.WriteLine( _ ));
+			Error = error ?? (_ => Console.Error.WriteLine( _ ));
+
+			MethodNames = new List<string>();
             ObjString name = new ObjString("core");
 
             // Implicitly create a "core" module for the built in libraries.
@@ -99,6 +102,9 @@ namespace Wren.Core.VM
         public Compiler Compiler { get; set; }
 
         public WrenLoadModuleFn LoadModuleFn { get; set; }
+
+		public Action<string> Write { get; private set; }
+		public Action<string> Error { get; private set; }
 
         // Defines [methodValue] as a method on [classObj].
         private static bool BindMethod(bool isStatic, int symbol, ObjClass classObj, Obj methodContainer)
@@ -1079,7 +1085,8 @@ namespace Wren.Core.VM
             {
                 f.Error = Obj.MakeString("Error message must be a string.");
             }
-            Console.Error.WriteLine(f.Error as ObjString);
+
+            Error((f.Error as ObjString).Str);
             return false;
         }
 

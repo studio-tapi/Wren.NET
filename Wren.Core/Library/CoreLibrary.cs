@@ -235,13 +235,11 @@ namespace Wren.Core.Library
             + "\n"
             + "  static print(obj) {\n"
             + "    writeObject_(obj)\n"
-            + "    writeString_(\"\\n\")\n"
             + "    return obj\n"
             + "  }\n"
             + "\n"
             + "  static printAll(sequence) {\n"
             + "    for (object in sequence) writeObject_(object)\n"
-            + "    writeString_(\"\\n\")\n"
             + "  }\n"
             + "\n"
             + "  static write(obj) {\n"
@@ -2039,7 +2037,7 @@ namespace Wren.Core.Library
             if (args[stackStart + 1] != null && args[stackStart + 1].Type == ObjType.Obj)
             {
                 string s = args[stackStart + 1].ToString();
-                Console.Write(s);
+                vm.Write(s);
             }
             args[stackStart] = Obj.Null;
             return true;

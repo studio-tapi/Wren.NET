@@ -36,7 +36,7 @@ namespace Wren
 
             _loadedFile = path;
             string source = File.ReadAllText(path);
-            WrenVM vm = new WrenVM { LoadModuleFn = LoadModule };
+            WrenVM vm = new WrenVM(null, null) { LoadModuleFn = LoadModule };
             LibraryLoader.LoadLibraries(vm);
             return (int)vm.Interpret("main", path, source);
         }
@@ -48,7 +48,7 @@ namespace Wren
 
 		static void RunRepl()
 		{
-			WrenVM vm = new WrenVM();
+			WrenVM vm = new WrenVM(null, null);
 			LibraryLoader.LoadLibraries( vm );
 
 			WrenScript.LoadLibrary<ScriptTest>( vm );
